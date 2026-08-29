@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>Hiking Trailer</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header>
+  <div class="header-left">
+    <div class="titleBlock">
+      <h1>Hiking Trailer</h1>
+      <div class="titleByline">by Jawed Hakimi</div>
+    </div>
+    <div class="shaft-enable-control" id="shaftEnableControl">
+      <span id="shaftPowerLabel">Power Disabled</span>
+      <label class="slide-switch compact-switch" title="Enable motor power">
+        <input type="checkbox" id="shaftPowerSwitch" role="switch" aria-label="Enable motor power" disabled>
+        <span class="slide-track"><span class="slide-knob"></span></span>
+      </label>
+    </div>
+  </div>
+  <div class="header-actions">
+    <div class="connection-state"><span id="connDot"></span><span id="connText">connecting…</span></div>
+    <button class="btn secondary header-restart" id="btnHeaderRestart">Restart Device</button>
+  </div>
+</header>
+
+<nav id="tabNav">
+  <button data-tab="dashboard" class="active">Dashboard</button>
+  <button data-tab="can">CAN Monitor</button>
+  <button data-tab="pot">Pot Calibration</button>
+  <button data-tab="pid">Speed PID</button>
+  <button data-tab="imu">IMU / Fall / Compass</button>
+  <button data-tab="system">System</button>
+</nav>
+
+<main>
+
+  <!-- ===================== DASHBOARD ===================== -->
+  <section id="tab-dashboard" class="tab active">
+    <div id="fallBanner" class="banner warn">Waiting for live data from the controller…</div>
+
+    <div class="dashboard-hero">
+      <div class="card speed-card">
+        <div class="card-title-row"><h2>Ground speed</h2><span class="pill" id="dBraking" style="display:none">BRAKING</span></div>
+        <div class="speed-gauge" role="meter" aria-label="Current ground speed">
+          <svg viewBox="0 0 220 132" aria-hidden="true">
+            <path class="speed-arc-track" d="M25 112 A85 85 0 0 1 195 112" pathLength="100"/>
+            <path class="speed-arc-value" id="speedGaugeArc" d="M25 112 A85 85 0 0 1 195 112" pathLength="100"/>
+          </svg>
+          <div class="speed-readout" id="dSpeed">0.0<span class="unit">km/h</span></div>
+          <div class="speed-scale"><span>0</span><span id="speedGaugeMax">6 km/h</span></div>
+        </div>
+        <div class="park-control">
+          <div><strong id="parkStateLabel">Drive</strong><span id="parkStateHint">Wheel free to drive</span></div>
+          <label class="slide-switch" title="Hold the wheel at its current position">
+            <input type="checkbox" id="parkSwitch" role="switch" aria-label="Park" disabled>
+            <span class="slide-track"><span class="slide-knob"></span></span>
+          </label>
+          <span class="park-word">PARK</span>
+        </div>
+      </div>
+
+      <div class="card drive-card">
+        <div class="card-title-row"><h2>Drive command</h2><span class="mode-chip" id="dControlMode">Speed</span></div>
+        <div class="pot-command">
+          <div><span class="label">Handle position</span><div class="command-value" id="dPot">0<span class="unit">%</span></div></div>
+          <div class="pot-track" aria-hidden="true"><div class="pot-center"></div><div class="pot-fill" id="dPotTrackFill"></div><div class="pot-knob" id="dPotKnob"></div></div>
+          <div class="pot-scale"><span>Reverse</span><span>Neutral</span><span>Forward</span></div>
+        </div>
+        <div class="drive-details">
+          <div><span class="label" id="dTargetLabel">Target ERPM</span><strong id="dTargetVal">0</strong></div>
+          <div><span class="label">Actual ERPM</span><strong id="dActualErpm">0</strong></div>
+          <div><span class="label">Trip · <span id="dTripSource">waiting</span></span><strong id="dTrip">0.0<span class="unit">m</span></strong></div>
+        </div>
+        <button class="btn secondary compact" id="btnResetTrip">Reset trip</button>
+      </div>
+    </div>
+
+    <div class="vitals-grid">
+      <div class="vital"><span class="vital-icon">⚡</span><div><span class="label">Battery <small id="dVbatSource">VESC</small></span><strong id="dVbat">0.0<span class="unit">V</span></strong></div></div>
+      <div class="vital"><span class="vital-icon">↯</span><div><span class="label">Motor current</span><strong id="dCurrent">0.0<span class="unit">A</span></strong></div></div>
+      <div class="vital"><span class="vital-icon">⇥</span><div><span class="label">Input current</span><strong id="dCurrentIn">0.0<span class="unit">A</span></strong></div></div>
+      <div class="vital"><span class="vital-icon">◒</span><div><span class="label">Duty</span><strong id="dDuty">0<span class="unit">%</span></strong></div></div>
+      <div class="vital"><span class="vital-icon">♨</span><div><span class="label">FET / motor</span><strong id="dTemp">-- / --<span class="unit">°C</span></strong></div></div>
+      <div class="vital"><span class="vital-icon">Σ</span><div><span class="label">Energy used</span><strong id="dAh">0.00<span class="unit">Ah</span></strong></div></div>
+    </div>
+
+    <div class="card orientation-card">
+      <div class="card-title-row"><h2>Stability &amp; heading</h2><div class="can-summary"><span class="pill" id="dCanState">?</span><span id="dCanErr">tx 0 / rx 0</span></div></div>
+      <div class="orientation-layout">
+        <div class="orientation-visuals">
+          <div class="compass-panel">
+            <div class="compass-wrap"><svg id="compassSvg" width="150" height="150" viewBox="0 0 150 150"></svg></div>
+            <div class="heading-val"><span id="dHeading">--</span>&deg;<small>heading</small></div>
+          </div>
+          <div class="cube-panel">
+            <div class="orientation-cube-stage" role="img" aria-label="Live device orientation cube">
+              <div class="cube-camera">
+                <div class="orientation-cube" id="orientationCube">
+                  <div class="cube-face cube-front">FRONT</div>
+                  <div class="cube-face cube-back">BACK</div>
+                  <div class="cube-face cube-right">R</div>
+                  <div class="cube-face cube-left">L</div>
+                  <div class="cube-face cube-top">TOP</div>
+                  <div class="cube-face cube-bottom">BOTTOM</div>
+                </div>
+              </div>
+            </div>
+            <div class="cube-caption" id="cubeOrientationLabel">Pitch -- · Roll --</div>
+            <div class="cube-legend" aria-label="Orientation cube face colors">
+              <span><i class="cube-swatch cube-swatch-front"></i>Front</span>
+              <span><i class="cube-swatch cube-swatch-back"></i>Back</span>
+              <span><i class="cube-swatch cube-swatch-right"></i>Right</span>
+              <span><i class="cube-swatch cube-swatch-left"></i>Left</span>
+              <span><i class="cube-swatch cube-swatch-top"></i>Top</span>
+              <span><i class="cube-swatch cube-swatch-bottom"></i>Bottom</span>
+            </div>
+          </div>
+        </div>
+        <div class="stability-panel">
+          <div class="tilt-head"><div><span class="label">Tilt from upright</span><strong id="dTilt">0.0<span class="unit">°</span></strong></div><span id="tiltThresholdLabel">limit 55°</span></div>
+          <div class="gauge-track large"><div class="gauge-fill" id="tiltGaugeFill" style="width:0%"></div></div>
+          <div class="stability-stats">
+            <div><span class="label">Pitch</span><strong id="dPitch">0.0<span class="unit">°</span></strong></div>
+            <div><span class="label">Roll</span><strong id="dRoll">0.0<span class="unit">°</span></strong></div>
+            <div><span class="label">Acceleration</span><strong id="dAccel">1.0<span class="unit">g</span></strong></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== CAN MONITOR ===================== -->
+  <section id="tab-can" class="tab">
+    <div class="card">
+      <h2>Decoded VESC status messages</h2>
+      <p class="section-sub">All six standard VESC status broadcasts. Enable the messages and their rates in VESC Tool → App Settings → General.</p>
+      <div class="vesc-status-grid">
+        <div class="stat"><div class="label">Status 1 · Drive</div><div class="status-value" id="vs1">Checking CAN broadcast…</div></div>
+        <div class="stat"><div class="label">Status 2 · Charge</div><div class="status-value" id="vs2">Checking CAN broadcast…</div></div>
+        <div class="stat"><div class="label">Status 3 · Energy</div><div class="status-value" id="vs3">Checking CAN broadcast…</div></div>
+        <div class="stat"><div class="label">Status 4 · Thermal</div><div class="status-value" id="vs4">Checking CAN broadcast…</div></div>
+        <div class="stat"><div class="label">Status 5 · Voltage / tacho</div><div class="status-value" id="vs5">Checking CAN broadcast…</div></div>
+        <div class="stat"><div class="label">Status 6 · Inputs</div><div class="status-value" id="vs6">Checking CAN broadcast…</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Live CAN traffic</h2>
+      <div class="row between" style="margin-bottom:10px">
+        <div class="row">
+          <button class="btn secondary" id="btnCanPause">Pause</button>
+          <button class="btn secondary" id="btnCanClear">Clear</button>
+        </div>
+        <span class="hint" id="canRate">0 fps</span>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Dir</th><th>ID</th><th>Name</th><th>Decoded</th><th>DLC</th><th>Data</th><th>Count</th><th>Last (ms)</th></tr></thead>
+          <tbody id="canRows"></tbody>
+        </table>
+      </div>
+      <p class="hint">One row per CAN ID — the row itself is static (doesn't move or get re-added); only its
+        Data/DLC/Count/Last columns update in place as new frames of that ID arrive, like a live spreadsheet rather
+        than a scrolling log. TX = frames this controller sent (motor commands). RX = frames seen on the bus (VESC
+        status broadcasts and anything else present). Enable more "CAN Status Message" broadcasts in VESC Tool -&gt;
+        App Settings -&gt; General to see more rows here.</p>
+    </div>
+  </section>
+
+  <!-- ===================== POT CALIBRATION ===================== -->
+  <section id="tab-pot" class="tab">
+    <div class="card">
+      <h2>Live reading</h2>
+      <div class="grid">
+        <div class="stat"><div class="label">Raw ADC (instant)</div><div class="value" id="potRawInstantLive">0</div></div>
+        <div class="stat"><div class="label">Filtered</div><div class="value" id="potRawLive">0</div></div>
+        <div class="stat"><div class="label">Position</div><div class="value" id="potPctLive">0<span class="unit">%</span></div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Endpoint calibration</h2>
+      <p class="section-sub">Start calibration first; this immediately commands zero and locks motor output. Then
+        capture both endpoints. After saving, return the handle to center before driving can resume.</p>
+      <div class="row">
+        <button class="btn" id="btnStartPotCal">Start calibration</button>
+        <button class="btn secondary" id="btnCancelPotCal" disabled>Cancel</button>
+      </div>
+      <p class="hint" id="potCalSessionMsg">Calibration inactive — motor control uses the saved endpoints.</p>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" id="btnCapMin" disabled>Capture MIN (at this end)</button>
+        <button class="btn" id="btnCapMax" disabled>Capture MAX (at this end)</button>
+      </div>
+      <div class="grid" style="margin-top:14px">
+        <div class="stat"><div class="label">Min</div><div class="value" id="potCalMin">--</div></div>
+        <div class="stat"><div class="label">Max</div><div class="value" id="potCalMax">--</div></div>
+        <div class="stat"><div class="label">Center</div><div class="value" id="potCalCenter">--</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Mapping</h2>
+      <div class="field">
+        <label>Deadband (% of travel around center)</label>
+        <input type="number" id="potDeadband" min="0" max="45" step="0.5">
+      </div>
+      <div class="field">
+        <label>Moving-average window (samples)</label>
+        <input type="number" id="potFilterSamples" min="1" max="128" step="1">
+        <p class="hint">Higher values smooth more noise but add more response delay. The filter starts from the first real ADC reading.</p>
+      </div>
+      <button class="btn" id="btnSavePot">Save</button>
+    </div>
+  </section>
+
+  <!-- ===================== SPEED PID ===================== -->
+  <section id="tab-pid" class="tab">
+    <div class="card">
+      <h2>Closed-loop speed PID</h2>
+      <p class="section-sub">Trims the pot's feedforward ERPM command using the VESC's own measured ERPM (fed back
+        over CAN) — helps hold a steady speed against slope/load instead of just commanding a fixed ERPM per pot
+        position. Off by default; the existing open-loop mapping already drives the motor without this. Only
+        applies in <strong>Speed (RPM)</strong> control mode (System tab) — ignored entirely while Current mode is
+        selected, since there's no RPM setpoint to trim against.</p>
+      <div class="check-field"><input type="checkbox" id="pidEnabled"><label for="pidEnabled">Enable speed PID trim</label></div>
+      <div class="row">
+        <div class="field"><label>Kp</label><input type="number" id="pidKp" step="0.01"></div>
+        <div class="field"><label>Ki</label><input type="number" id="pidKi" step="0.01"></div>
+        <div class="field"><label>Kd</label><input type="number" id="pidKd" step="0.001"></div>
+        <div class="field"><label>Max trim (ERPM)</label><input type="number" id="pidMaxTrim" step="10"></div>
+      </div>
+      <button class="btn" id="btnSavePid">Save</button>
+    </div>
+
+    <div class="card">
+      <h2>Target vs. actual ERPM</h2>
+      <canvas id="pidSpark" class="spark"></canvas>
+      <div class="row" style="margin-top:8px">
+        <span class="hint">blue = target (feedforward+trim), green = actual (measured)</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== IMU ===================== -->
+  <section id="tab-imu" class="tab">
+    <div class="card">
+      <h2>Live orientation</h2>
+      <div class="grid">
+        <div class="stat"><div class="label">Tilt (from upright)</div><div class="value" id="imuTilt">0.0<span class="unit">°</span></div></div>
+        <div class="stat"><div class="label">Pitch</div><div class="value" id="imuPitch">0.0<span class="unit">°</span></div></div>
+        <div class="stat"><div class="label">Roll</div><div class="value" id="imuRoll">0.0<span class="unit">°</span></div></div>
+        <div class="stat"><div class="label">Heading</div><div class="value" id="imuHeading">--<span class="unit">°</span></div></div>
+        <div class="stat"><div class="label">Accel</div><div class="value" id="imuAccel">1.0<span class="unit">g</span></div></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" id="btnZero">Set upright zero (calibrate mounting)</button>
+      </div>
+      <p class="hint">Place the device the way it normally sits when everything's fine, then click this. Fall
+        detection measures tilt away from whatever orientation was captured here — it does not need the IMU to be
+        mounted perfectly level.</p>
+    </div>
+
+    <div class="card">
+      <h2>Fall detection</h2>
+      <div class="row">
+        <div class="field"><label>Fall angle threshold (°)</label><input type="number" id="fallAngle" min="10" max="90" step="1"></div>
+        <div class="field"><label>Recovery margin (°)</label><input type="number" id="fallMargin" min="2" max="60" step="1"></div>
+        <div class="field"><label>Confirm time (ms)</label><input type="number" id="fallConfirm" min="0" max="5000" step="10"></div>
+        <div class="field"><label>Auto-recover stable time (ms)</label><input type="number" id="fallRecover" min="0" max="20000" step="100"></div>
+      </div>
+      <div class="check-field"><input type="checkbox" id="impactEnabled"><label for="impactEnabled">Also trigger on sudden impact (fast knock/drop that may not tip it far)</label></div>
+      <div class="field" style="max-width:220px"><label>Impact threshold (g)</label><input type="number" id="impactThreshold" min="1.2" max="10" step="0.1"></div>
+      <div class="check-field"><input type="checkbox" id="fallWarnEnabled"><label for="fallWarnEnabled">Buzzer warns as tilt approaches the fall angle (beeps faster the closer it gets)</label></div>
+      <div class="field" style="max-width:260px"><label>Warning starts at (% of fall angle)</label><input type="number" id="fallWarnStartPct" min="0" max="99" step="5"></div>
+      <p class="hint">The buzzer always sounds before motor control resumes after a safety interruption.</p>
+      <button class="btn" id="btnSaveFall">Save</button>
+      <p class="hint" style="margin-top:10px">On a fall: motor output is cut immediately (CAN commands stop). Once
+        the device is back upright and stays that way for the "auto-recover stable time" above, it does
+        <strong>not</strong> resume immediately — the motor stays off until the pot is back in its centered dead
+        zone too (so it can't lurch off in whatever direction the pot got knocked to during the fall), then the
+        buzzer beeps a few times as a "starting now" warning, and only after that finishes does normal control
+        resume. No button press needed for any of this, but you can also force-clear the fall latch below.</p>
+      <div class="row" style="margin-top:10px">
+        <button class="btn secondary" id="btnClearFall">Force-clear fall latch now</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Fall / impact event log</h2>
+      <div class="row" style="margin-bottom:8px"><button class="btn secondary" id="btnRefreshEvents">Refresh</button></div>
+      <div class="log-list" id="eventLog"><div class="hint">No events yet.</div></div>
+    </div>
+
+    <div class="card">
+      <h2>Compass calibration (hard-iron)</h2>
+      <p class="section-sub">Click Start, then slowly rotate the whole device through all axes (like tumbling a
+        die) for 15-20 seconds — figure-8 motions work well. Click Stop &amp; Save when done.</p>
+      <div class="row">
+        <button class="btn" id="btnMagStart">Start</button>
+        <button class="btn" id="btnMagStop">Stop &amp; Save</button>
+        <button class="btn secondary" id="btnMagCancel">Cancel</button>
+      </div>
+      <div id="magCalPreview" class="hint" style="margin-top:10px">Not calibrating.</div>
+      <div class="field" style="max-width:260px;margin-top:12px">
+        <label>Magnetic declination (°, + = East)</label>
+        <input type="number" id="magDecl" step="0.1">
+      </div>
+      <button class="btn" id="btnSaveDecl">Save declination</button>
+    </div>
+  </section>
+
+  <!-- ===================== SYSTEM ===================== -->
+  <section id="tab-system" class="tab">
+    <div class="card">
+      <h2>VESC / CAN</h2>
+      <div class="row">
+        <div class="field"><label>VESC controller ID</label><input type="number" id="sysCtrlId" min="0" max="255"></div>
+        <div class="field">
+          <label>CAN baud rate</label>
+          <select id="sysCanBaud">
+            <option value="125000">125 kbit/s</option>
+            <option value="250000">250 kbit/s</option>
+            <option value="500000">500 kbit/s</option>
+            <option value="1000000">1 Mbit/s</option>
+          </select>
+        </div>
+        <div class="field"><label>CAN send interval (ms)</label><input type="number" id="sysSendMs" min="10" max="500"></div>
+      </div>
+      <p class="hint">Controller ID / baud rate changes need a restart to take effect (shown after saving).</p>
+    </div>
+
+    <div class="card">
+      <h2>Control mode</h2>
+      <p class="section-sub">What the pot commands the VESC to do. Takes effect immediately, no restart needed.</p>
+      <div class="check-field"><input type="checkbox" id="sysInvertMotor"><label for="sysInvertMotor">Invert motor direction</label></div>
+      <p class="hint">Use this if Forward drives the physical motor backward. For safety, a changed direction stays locked at zero until the handle is centered.</p>
+      <div class="row">
+        <div class="field">
+          <label>Mode</label>
+          <select id="sysControlMode">
+            <option value="0">Speed (RPM) — VESC controls current internally to hit the requested RPM</option>
+            <option value="1">Current (torque) — commands motor current directly; speed follows load</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Speed limit unit (Speed mode)</label>
+          <select id="sysSpeedLimitUnit">
+            <option value="1">km/h</option>
+            <option value="0">ERPM (raw)</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Max speed forward, km/h (Speed mode)</label><input type="number" id="sysMaxSpeedKmh" step="0.1" min="0.1"></div>
+        <div class="field"><label>Max ERPM forward (Speed mode)</label><input type="number" id="sysMaxErpm" step="10"></div>
+        <div class="field"><label>Max current forward, A (Current mode)</label><input type="number" id="sysMaxCurrent" step="0.5"></div>
+      </div>
+      <p class="hint">Pick the unit above; the other one becomes a grayed-out, live-computed equivalent (using the
+        pole pairs / wheel diameter / gear ratio in "Speed / distance conversion" below) so you can sanity-check
+        either number. Get pole pairs/wheel/gear right first, or the km/h number will be off by whatever those are
+        wrong by — same as the speed telemetry.</p>
+      <p class="hint">The Speed PID tab's closed-loop trim only applies in Speed (RPM) mode — it's ignored while
+        Current mode is selected.</p>
+    </div>
+
+    <div class="card">
+      <h2>Reverse / backward limits</h2>
+      <p class="section-sub">Separate limits for the backward direction. Turning reverse off forces exactly zero
+        torque that way — not just a lower limit — enforced as a final clamp on whatever gets sent over CAN, so a
+        PID trim or anything else can't override it.</p>
+      <div class="check-field"><input type="checkbox" id="sysReverseEnabled"><label for="sysReverseEnabled">Allow reverse / backward rotation</label></div>
+      <div class="row">
+        <div class="field"><label>Max speed backward, km/h (Speed mode)</label><input type="number" id="sysMaxSpeedKmhBack" step="0.1" min="0"></div>
+        <div class="field"><label>Max ERPM backward (Speed mode)</label><input type="number" id="sysMaxErpmBack" step="10"></div>
+        <div class="field"><label>Max current backward, A (Current mode)</label><input type="number" id="sysMaxCurrentBack" step="0.5"></div>
+      </div>
+      <p class="hint">Uses the same speed limit unit selected above.</p>
+    </div>
+
+    <div class="card">
+      <h2>Downhill braking &amp; Park</h2>
+      <p class="section-sub">When the wheel is spinning faster than the pot currently asks for — e.g. rolling
+        downhill under its own weight — send an active braking command instead of just easing off. Off by default;
+        without this the motor simply freewheels/coasts when overspeeding. Not affected by the reverse toggle above:
+        braking resists whatever direction it's already moving, it never drives it.</p>
+      <div class="check-field"><input type="checkbox" id="sysBrakingEnabled"><label for="sysBrakingEnabled">Enable downhill braking</label></div>
+      <div class="row">
+        <div class="field"><label>Brake current, A</label><input type="number" id="sysBrakeCurrent" step="0.5"></div>
+        <div class="field"><label>Engage margin (ERPM)</label><input type="number" id="sysBrakeMargin" step="10"></div>
+        <div class="field"><label>Park holding current, A</label><input type="number" id="sysParkCurrent" step="0.5" min="0.1"></div>
+      </div>
+      <p class="hint">Park uses the VESC handbrake controller to hold the wheel's current position. Use the lowest
+        holding current that works reliably; continuous holding current heats the motor and VESC.</p>
+    </div>
+
+    <div class="card">
+      <h2>Speed / distance conversion</h2>
+      <div class="row">
+        <div class="field"><label>Motor pole pairs</label><input type="number" id="sysPoles" min="1" max="100"></div>
+        <div class="field"><label>Wheel diameter (mm)</label><input type="number" id="sysWheel" step="1"></div>
+        <div class="field"><label>Gear ratio (motor:wheel)</label><input type="number" id="sysGear" step="0.01"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Battery voltage</h2>
+      <div class="field" style="max-width:320px">
+        <label>Voltage source</label>
+        <select id="sysVbatSource">
+          <option value="1" selected>VESC CAN Status 5</option>
+          <option value="0">ESP32 analog divider</option>
+        </select>
+      </div>
+      <div id="vbatDividerCalibration">
+        <div class="field" style="max-width:220px"><label>ESP32 divider calibration scale</label><input type="number" id="sysVbatScale" step="0.001"></div>
+        <p class="hint">This scale only applies to the ESP32 resistor-divider source and compensates for resistor/ADC tolerance. VESC mode uses its decoded Status 5 voltage directly.</p>
+      <div class="row">
+        <div class="field" style="max-width:160px"><label>Multimeter reading (V)</label><input type="number" id="sysVbatMeasured" step="0.01"></div>
+        <button class="btn secondary" id="btnComputeVbat">Compute scale</button>
+      </div>
+      </div>
+      <p class="hint" id="vbatSourceHint">The ESP32 divider is sampled and filtered locally.</p>
+    </div>
+
+    <div class="card">
+      <h2>WiFi Access Point</h2>
+      <div class="row">
+        <div class="field"><label>SSID</label><input type="text" id="sysSsid" maxlength="32"></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Current password</label><input type="password" id="sysPassCurrent" maxlength="63" autocomplete="off"></div>
+        <div class="field"><label>New password (8-63 chars)</label><input type="password" id="sysPass" maxlength="63" autocomplete="new-password"></div>
+      </div>
+      <p class="hint">To set a new password you must enter the current one first — the controller never sends the
+        real password back to the browser, so this is the only way it can confirm you're allowed to change it.
+        Leave both blank to keep the password unchanged. Requires a restart to take effect.</p>
+    </div>
+
+    <div class="row">
+      <button class="btn" id="btnSaveSystem">Save all system settings</button>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h2>Device</h2>
+      <div class="grid">
+        <div class="stat"><div class="label">Uptime</div><div class="value" id="sysUptime">--</div></div>
+        <div class="stat"><div class="label">Free heap</div><div class="value" id="sysHeap">--</div></div>
+      </div>
+      <p class="hint" id="sysBuildInfo" style="margin-top:10px"></p>
+      <div class="row" style="margin-top:12px">
+        <button class="btn warn" id="btnRestart">Restart</button>
+        <button class="btn danger" id="btnFactoryReset">Factory reset (erase all calibration &amp; settings)</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
