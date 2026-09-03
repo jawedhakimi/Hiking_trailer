@@ -15,6 +15,7 @@
 // ESP32 ---- TJA1051 (TX=IO17 RX=IO18) --- CAN bus --- VESC, sending
 //            CAN_PACKET_SET_RPM and reading back the VESC's own status
 //            broadcasts (speed, temps, voltage, tachometer, ...).
+// ESP32 ---- ST7789/CST816S 1.69-inch touch LCD: SquareLine live dashboard.
 // ESP32 ---- WiFi Access Point + web server: live dashboard, CAN monitor,
 //            pot/IMU calibration, speed PID tuning, system settings.
 //
@@ -36,6 +37,8 @@
 #include "web_server.h"
 #include "odometry.h"
 #include "control_lock.h"
+#include "display_app.h"
+#include "buzzer.h"
 
 // Set to 1 to just stream raw ADC counts to Serial instead of driving the
 // VESC — a low-level hardware bring-up aid, independent of calibration.
@@ -243,7 +246,7 @@ static void updateFallWarningBuzzer(uint32_t now) {
     // is active (recovery requires low tilt), so this is belt-and-suspenders
     // rather than something expected to trigger often.
     if (!g_settings.fallWarningBuzzerEnabled || !Imu::isPresent() || postFallLockout) {
-        if (fallWarnBuzzerOn) { noTone(PIN_BUZZER); fallWarnBuzzerOn = false; }
+        if (fallWarnBuzzerOn) { Buzzer::off(); fallWarnBuzzerOn = false; }
         return;
     }
 
@@ -252,7 +255,7 @@ static void updateFallWarningBuzzer(uint32_t now) {
     float tilt = Imu::tiltDeg();
 
     if (tilt < warnStart) {
-        if (fallWarnBuzzerOn) { noTone(PIN_BUZZER); fallWarnBuzzerOn = false; }
+        if (fallWarnBuzzerOn) { Buzzer::off(); fallWarnBuzzerOn = false; }
         return;
     }
 
@@ -264,8 +267,8 @@ static void updateFallWarningBuzzer(uint32_t now) {
     if (now >= fallWarnNextToggleMs) {
         fallWarnNextToggleMs = now + halfPeriod;
         fallWarnBuzzerOn = !fallWarnBuzzerOn;
-        if (fallWarnBuzzerOn) tone(PIN_BUZZER, BUZZER_FREQ_HZ);
-        else noTone(PIN_BUZZER);
+        if (fallWarnBuzzerOn) Buzzer::on();
+        else Buzzer::off();
     }
 }
 
@@ -280,7 +283,7 @@ static bool updateSafetyResumeGating(uint32_t now, bool interruptionActive,
         postFallLockout = true;
         if (resumeWarnActive || resumeWarnBuzzerOn) {
             resumeWarnActive = false;
-            noTone(PIN_BUZZER);
+            Buzzer::off();
             resumeWarnBuzzerOn = false;
         }
         return true;
@@ -308,7 +311,7 @@ static bool updateSafetyResumeGating(uint32_t now, bool interruptionActive,
         // for it to re-center before trying again, rather than starting the
         // motor right as the pot is on its way somewhere else.
         resumeWarnActive = false;
-        noTone(PIN_BUZZER);
+        Buzzer::off();
         resumeWarnBuzzerOn = false;
         return true;
     }
@@ -316,10 +319,10 @@ static bool updateSafetyResumeGating(uint32_t now, bool interruptionActive,
     if (now >= resumeWarnNextToggleMs) {
         resumeWarnBuzzerOn = !resumeWarnBuzzerOn;
         if (resumeWarnBuzzerOn) {
-            tone(PIN_BUZZER, BUZZER_FREQ_HZ);
+            Buzzer::on();
             resumeWarnNextToggleMs = now + RESUME_WARNING_BEEP_ON_MS;
         } else {
-            noTone(PIN_BUZZER);
+            Buzzer::off();
             resumeWarnNextToggleMs = now + RESUME_WARNING_BEEP_OFF_MS;
             resumeWarnBeepsDone++;
             if (resumeWarnBeepsDone >= RESUME_WARNING_BEEP_COUNT) {
@@ -433,6 +436,7 @@ void setup() {
     pinMode(PIN_LED_ERROR, OUTPUT);
     digitalWrite(PIN_LED_CAN, LOW);
     digitalWrite(PIN_LED_ERROR, LOW);
+    Buzzer::begin();
 
     ControlLock::begin();
     g_settings.load();
@@ -444,6 +448,10 @@ void setup() {
     }
     ads.setGain(POT_ADC_GAIN);
     PotCal::begin(&ads);
+
+    if (!DisplayApp::begin()) {
+        Serial.println("WARNING: LCD initialization failed — control loop continues without it.");
+    }
 
     if (!initCan()) {
         haltWithCanError("CAN (TWAI) init failed — check TJA1051 wiring and CAN bus power.");
@@ -736,18 +744,38 @@ void loop() {
     snap.calibrationWaitingForCenter = PotCal::isWaitingForCenter();
     snap.directionChangeLockout = directionChangeLockout;
     WebServerApp::setTelemetry(snap);
+
+    DisplayApp::Telemetry displayTelemetry;
+    displayTelemetry.speedKmh = speedMps * 3.6f;
+    displayTelemetry.batteryVoltage = selectedBatteryVoltage;
+    displayTelemetry.tripDistanceM = Odometry::tripDistanceM();
+    displayTelemetry.headingDeg = Imu::headingDeg();
+    displayTelemetry.motorCurrentA = actualMotorCurrentA;
+    displayTelemetry.dutyCycle = actualDutyCycle;
+    displayTelemetry.fetTempC = se.fetTempC;
+    displayTelemetry.motorTempC = se.motorTempC;
+    displayTelemetry.fallAngleThresholdDeg = g_settings.fallAngleThresholdDeg;
+    displayTelemetry.potPositionPercent = posPct;
+    displayTelemetry.vescStatusFresh = statusFresh;
+    displayTelemetry.batteryFresh = selectedBatteryFresh;
+    displayTelemetry.temperatureFresh = status4Fresh;
+    displayTelemetry.odometryAvailable = Odometry::hasDistanceSource();
+    displayTelemetry.imuPresent = Imu::isPresent();
+    displayTelemetry.shaftPowerEnabled = shaftPowerEnabled;
+    displayTelemetry.fallen = fallen;
     ControlLock::unlock();
+    DisplayApp::update(displayTelemetry);
     WebServerApp::loop();
 
     if (now - lastDebugPrint >= DEBUG_PRINT_INTERVAL_MS) {
         lastDebugPrint = now;
 
 #if DEBUG_MODE == DEBUG_MODE_VALUES
-        Serial.printf(
-            "pos=%.1f%% speed=%.2f m/s (%.1f km/h) trip=%.1f m | Vbat=%.2f V | tilt=%.1f "
-            "heading=%.0f fallen=%d\n",
-            posPct, speedMps, speedMps * 3.6f, Odometry::tripDistanceM(), selectedBatteryVoltage,
-            Imu::tiltDeg(), Imu::headingDeg(), fallen ? 1 : 0);
+        // Serial.printf(
+        //     "pos=%.1f%% speed=%.2f m/s (%.1f km/h) trip=%.1f m | Vbat=%.2f V | tilt=%.1f "
+        //     "heading=%.0f fallen=%d\n",
+        //     posPct, speedMps, speedMps * 3.6f, Odometry::tripDistanceM(), selectedBatteryVoltage,
+        //     Imu::tiltDeg(), Imu::headingDeg(), fallen ? 1 : 0);
 #elif DEBUG_MODE == DEBUG_MODE_CAN
         twai_status_info_t status;
         if (twai_get_status_info(&status) == ESP_OK) {

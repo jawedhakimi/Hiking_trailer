@@ -36,6 +36,22 @@ String g_mdnsHostname;
 bool g_restartRequested = false;
 uint32_t g_restartAtMs = 0;
 
+bool applyShaftPowerEnabled(bool requested) {
+    if (requested && (!PotCal::isValid() || PotCal::isWebCalibrationActive())) {
+        return false;
+    }
+    if (!requested) {
+        // Release torque immediately and clear Park so a later Enable cannot
+        // unexpectedly reapply the handbrake.
+        if (PotCal::isValid() && !PotCal::isWebCalibrationActive()) {
+            VescCan::sendSetCurrent(g_settings.vescControllerId, 0.0f);
+        }
+        g_parkEnabled = false;
+    }
+    g_shaftPowerEnabled = requested;
+    return true;
+}
+
 void scheduleRestart(uint32_t delayMs = 400) {
     g_restartRequested = true;
     g_restartAtMs = millis() + delayMs;
@@ -516,22 +532,12 @@ void setupApi() {
         }
 
         bool requested = value == "true" || value == "1";
-        if (requested && (!PotCal::isValid() || PotCal::isWebCalibrationActive())) {
+        if (!applyShaftPowerEnabled(requested)) {
             JsonDocument doc;
             doc["error"] = "Complete potentiometer calibration before enabling motor power";
             sendJson(request, doc, 409);
             return;
         }
-        if (!requested) {
-            // Release torque immediately, then main.cpp stops periodic motor
-            // commands altogether. Also clear Park so a later Enable cannot
-            // unexpectedly reapply the handbrake.
-            if (PotCal::isValid() && !PotCal::isWebCalibrationActive()) {
-                VescCan::sendSetCurrent(g_settings.vescControllerId, 0.0f);
-            }
-            g_parkEnabled = false;
-        }
-        g_shaftPowerEnabled = requested;
 
         JsonDocument doc;
         doc["ok"] = true;
@@ -642,5 +648,12 @@ void setTelemetry(const TelemetrySnapshot &snap) {
 
 bool isParkEnabled() { return g_parkEnabled; }
 bool isShaftPowerEnabled() { return g_shaftPowerEnabled; }
+
+bool setShaftPowerEnabled(bool enabled) {
+    ControlLock::Guard guard;
+    return applyShaftPowerEnabled(enabled);
+}
+
+const char *mdnsHostname() { return g_mdnsHostname.c_str(); }
 
 } // namespace WebServerApp

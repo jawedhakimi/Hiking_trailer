@@ -1,10 +1,11 @@
-# VESC CAN Controller — pot follow + IMU + web dashboard (ESP32-S3 N16R8)
+# VESC CAN Controller — pot follow + LCD + IMU + web dashboard (ESP32-S3 N16R8)
 
 Single ESP32-S3 module that reads a centered linear potentiometer through
 an ADS1115 ADC and drives a VESC motor controller directly over CAN
 (through a TJA1051 transceiver), fuses a 9-axis ICM20948 IMU for compass
 heading and fall detection (motor cuts out on a fall, auto-resumes once
-upright), and hosts its own WiFi Access Point with a web dashboard for
+upright), shows live telemetry on the attached 1.69-inch touch LCD, and
+hosts its own WiFi Access Point with a web dashboard for
 live telemetry, a CAN bus monitor, and calibrating/tuning everything
 without reflashing. No ESP-NOW / second ESP32 — this is a single-node
 design.
@@ -15,18 +16,44 @@ design.
 |---|---|---|
 | CAN TX -> TJA1051 TXD | IO17 | |
 | CAN RX <- TJA1051 RXD | IO18 | |
-| I2C SDA -> ADS1115 | IO7 | |
-| I2C SCL -> ADS1115 | IO6 | |
+| I2C SDA -> ADS1115 | IO7 | primary I2C bus |
+| I2C SCL -> ADS1115 | IO6 | primary I2C bus |
 | Potentiometer wiper -> ADS1115 | A0 (first single-ended channel) | Confirmed working connection; `POT_ADC_CHANNEL = 0` uses Adafruit's zero-indexed API |
 | Battery voltage divider midpoint | IO4 | 510k (pack+ side) / 15k (GND side) divider |
 | Calibration buzzer | IO39 | passive piezo buzzer, driven with a PWM tone |
 | CAN status LED | IO40 | blinks on CAN tx/rx activity, off when idle, solid ON on CAN error |
 | Other-error LED | IO41 | blinks on non-CAN errors |
-| ICM20948 CS | IO8 | FSPI (SPI2) |
+| ICM20948 CS | IO8 | shared FSPI bus, independent chip select |
 | ICM20948 SCK | IO12 | FSPI |
-| ICM20948 MOSI | IO11 | FSPI |
+| ICM20948 MOSI | IO11 | FSPI, shared with LCD DIN |
 | ICM20948 MISO | IO13 | FSPI |
 | ICM20948 INT | IO42 | reserved for future interrupt-driven reads; currently just an input, not wired into the ISR yet |
+| LCD DIN / CLK | IO11 / IO12 | shared FSPI MOSI/SCK with IMU |
+| LCD CS / DC | IO10 / IO15 | independent chip select |
+| LCD reset / backlight | IO45 / IO46 | |
+| Touch SDA / SCL | IO47 / IO48 | secondary I2C bus (`Wire1`) |
+| Touch reset / interrupt | IO14 / IO21 | CST816S |
+
+The LCD Home page shows measured VESC speed, selected battery voltage,
+trip distance, compass heading, and shaft-power state. The Info page adds
+motor current, duty cycle, FET/motor temperatures, CAN freshness, and the
+safety state. Navigation is touch-enabled, and so are several controls —
+these are live, not read-only:
+- Home page **Enable switch** — toggles shaft power the same way the web
+  UI's Enable does, including the same rejection (pot calibration must be
+  complete/not mid-calibration) if it can't be turned on.
+- Settings page **Fall Angle slider** — changes
+  `g_settings.fallAngleThresholdDeg` live and saves it to flash ~750ms
+  after the last drag.
+- Settings page **Calibrate / PotMin / PotMax buttons** — drive the same
+  pot-endpoint calibration state machine as the web UI's calibration
+  wizard.
+- Settings page **Set Upright Zero button** — runs the IMU's upright-zero
+  calibration, same as the web UI's IMU tab.
+
+All of these go through the same `ControlLock` guarding and settings/
+calibration code paths the web UI uses, so the two stay consistent with
+each other.
 
 TJA1051 needs its own 3.3V/5V + GND per its datasheet, `CANH`/`CANL` go to
 the VESC's CAN bus (with a 120Ω termination resistor at each physical end
@@ -49,6 +76,8 @@ platformio.ini        - board/target config, library deps, LittleFS filesystem s
 include/config.h       - pins + first-boot defaults for every tunable (see settings.h for the runtime layer)
 data/                  - web dashboard (index.html, style.css, app.js) — flashed separately, see below
 src/main.cpp           - setup/loop: pot read -> ERPM, IMU update + fall cutoff, CAN send, web telemetry handoff
+src/display_app.*       - ST7789/CST816S + LVGL bridge and live LCD telemetry updates
+lib/ui/                 - generated SquareLine Studio 280x240 UI
 src/settings.h/.cpp     - runtime-tunable settings (deadband, PID gains, fall thresholds, WiFi creds, ...), NVS-backed
 src/potcal.h/.cpp       - potentiometer endpoint calibration (buzzer-guided at boot, or live from the web UI), NVS-backed
 src/vesc_can.h/.cpp     - VESC CAN packet builder/parser (SET_RPM/CURRENT/DUTY, Status 1/2/4/5) + CAN Monitor ring buffer

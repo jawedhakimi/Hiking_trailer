@@ -13,6 +13,9 @@
 #define PIN_CAN_TX               GPIO_NUM_17
 #define PIN_CAN_RX                GPIO_NUM_18
 
+// TJA1051 TXD and RXD wiring used by this hardware revision — unchanged
+// from the previous (non-LCD) revision.
+
 // Must match VESC Tool -> App Settings -> General -> CAN Baud Rate.
 // 500 kbit/s is the VESC default; change this define (and the matching
 // TWAI_TIMING_CONFIG_xxx() call in main.cpp) if yours is set differently.
@@ -31,6 +34,11 @@
 #define PIN_I2C_SDA                7
 #define PIN_I2C_SCL                6
 #define ADS1115_I2C_ADDR           0x48   // default address, ADDR pin -> GND
+
+// Unchanged from the previous (non-LCD) revision. This is the primary I2C
+// bus (Wire). The CST816S touch controller is on its own separate
+// secondary bus (Wire1, PIN_TOUCH_SDA/PIN_TOUCH_SCL, defined below) — the
+// two do not share pins.
 
 // The working hardware is connected to ADS1115 input A0. Adafruit's API is
 // zero-indexed, so channel 0 means the pin silkscreened A0.
@@ -75,8 +83,8 @@
 // Calibration buzzer
 // ---------------------------------------------------------------------------
 // Passive piezo buzzer — needs a driven PWM tone (not just a DC level) to
-// make sound, so buzz() (main.cpp) drives it with the core's tone()/
-// noTone() (LEDC-based PWM square wave) rather than digitalWrite().
+// make sound. The shared buzzer driver keeps one LEDC PWM channel attached
+// so calibration and safety-warning tones do not repeatedly reallocate it.
 // Note: IO39 is also the JTAG MTCK pin, but works fine as a plain GPIO/PWM
 // output as long as you're not using JTAG debugging.
 #define PIN_BUZZER                 39
@@ -302,13 +310,38 @@
 // interrupt; used only to time reads efficiently, all fall-detection logic
 // is still evaluated in the main loop, not the ISR). Note IO42 is also the
 // JTAG MTMS pin — fine as a plain GPIO as long as you're not using JTAG
-// debugging, same situation as the buzzer/LED pins above.
+// debugging, same situation as the buzzer/LED pins above. SCK/MOSI (IO12/
+// IO11) are shared with the LCD below on the same physical SPI bus, each
+// device selected by its own CS pin (IO8 for the IMU, IO10 for the LCD).
 #define PIN_IMU_CS                 8
 #define PIN_IMU_SCK                12
 #define PIN_IMU_MOSI               11
 #define PIN_IMU_MISO               13
 #define PIN_IMU_INT                42
 #define IMU_SPI_CLOCK_HZ           4000000  // 4MHz — well within the ICM20948's SPI limit
+
+// ---------------------------------------------------------------------------
+// 1.69-inch ST7789 LCD + CST816S touch
+// ---------------------------------------------------------------------------
+// The display uses the ESP32-S3's HSPI peripheral. Its pins must not overlap
+// the battery input or any of the fixed IMU pins above.
+#define PIN_LCD_DC                 15
+#define PIN_LCD_CS                 10
+#define PIN_LCD_SCK                12
+#define PIN_LCD_MOSI               11
+#define PIN_LCD_RST                45
+#define PIN_LCD_BACKLIGHT          46
+#define LCD_NATIVE_WIDTH          240
+#define LCD_NATIVE_HEIGHT         280
+#define LCD_ROTATION                1  // landscape: LVGL/SquareLine is 280x240
+
+#define PIN_TOUCH_SDA              47
+#define PIN_TOUCH_SCL              48
+#define PIN_TOUCH_RST              14
+#define PIN_TOUCH_INT              21
+
+#define LCD_LVGL_BUFFER_LINES      24
+#define LCD_TELEMETRY_INTERVAL_MS 100
 
 // How often the IMU is sampled/fused. 100Hz is plenty for both compass and
 // fall detection while leaving headroom for CAN/pot/web work each loop.
@@ -458,13 +491,13 @@
 // requires >= 8 characters); both are also editable from the web UI itself
 // (System tab) and persisted to NVS, these are only the first-boot
 // defaults.
-#define WIFI_AP_SSID_DEFAULT           "VESC-Controller"
+#define WIFI_AP_SSID_DEFAULT           "VESC"
 #define WIFI_AP_PASSWORD_DEFAULT       "vesc-trailer"
 #define WIFI_AP_CHANNEL                 6
 #define WIFI_AP_MAX_CLIENTS              4
 // The mDNS hostname is generated from the configured AP SSID. This fallback
 // is used only if the SSID contains no DNS-safe letters or digits.
-#define MDNS_HOSTNAME_FALLBACK          "vesc-controller"
+#define MDNS_HOSTNAME_FALLBACK          "vesc"
 
 #define WEB_TELEMETRY_INTERVAL_MS       100   // ~10Hz live dashboard updates
 #define CAN_LOG_RING_SIZE               64    // frames kept for the CAN Monitor tab

@@ -1,5 +1,6 @@
 #include "potcal.h"
 #include <Preferences.h>
+#include "buzzer.h"
 #include "config.h"
 
 namespace PotCal {
@@ -21,12 +22,6 @@ bool g_stagedHaveMin = false;
 bool g_stagedHaveMax = false;
 int32_t g_stagedMinRaw = 0;
 int32_t g_stagedMaxRaw = 0;
-
-void buzz(uint32_t ms) {
-    tone(PIN_BUZZER, BUZZER_FREQ_HZ);
-    delay(ms);
-    noTone(PIN_BUZZER);
-}
 
 void blinkErrorLedWarning(uint8_t times) {
     for (uint8_t i = 0; i < times; i++) {
@@ -129,13 +124,13 @@ bool runBuzzerGuidedCalibration() {
     Serial.println("=== Potentiometer calibration ===");
 
     Serial.println("Buzz: move the potentiometer to ONE END now...");
-    buzz(BUZZ_SHORT_MS);
+    Buzzer::beepBlocking(BUZZ_SHORT_MS);
     delay(CALIB_MOVE_WINDOW_MS);
     int32_t extreme1 = readAveraged(CALIB_SETTLE_SAMPLE_MS);
     Serial.printf("  end 1 raw = %ld\n", (long)extreme1);
 
     Serial.println("Buzz: now move the potentiometer to the OTHER END...");
-    buzz(BUZZ_SHORT_MS);
+    Buzzer::beepBlocking(BUZZ_SHORT_MS);
     delay(CALIB_MOVE_WINDOW_MS);
     int32_t extreme2 = readAveraged(CALIB_SETTLE_SAMPLE_MS);
     Serial.printf("  end 2 raw = %ld\n", (long)extreme2);
@@ -157,7 +152,7 @@ bool runBuzzerGuidedCalibration() {
     Serial.printf("Calibrated: min=%ld max=%ld center=%ld maxOffset=%ld\n",
                   (long)g_minRaw, (long)g_maxRaw, (long)g_centerRaw, (long)g_maxOffsetRaw);
 
-    buzz(BUZZ_COMPLETE_MS);
+    Buzzer::beepBlocking(BUZZ_COMPLETE_MS);
     persist();
     Serial.println("Calibration saved to flash.");
     return true;

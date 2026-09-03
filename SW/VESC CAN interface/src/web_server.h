@@ -109,4 +109,11 @@ void setTelemetry(const TelemetrySnapshot &snap);
 bool isParkEnabled();
 bool isShaftPowerEnabled();
 
+// Applies the same runtime motor-power safety checks used by the REST API.
+// Returns false when enabling is rejected because calibration is incomplete.
+bool setShaftPowerEnabled(bool enabled);
+
+// Active mDNS host without the trailing ".local" suffix.
+const char *mdnsHostname();
+
 } // namespace WebServerApp
